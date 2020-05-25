@@ -4,6 +4,8 @@ import javax.inject.Singleton;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
 
+import com.google.gson.Gson;
+
 import sd1920.trab2.api.Message;
 import sd1920.trab2.api.User;
 import sd1920.trab2.api.rest.MessageService;
@@ -12,12 +14,12 @@ import sd1920.trab2.clients.EmailResponse;
 import sd1920.trab2.clients.UsersEmailClient;
 import sd1920.trab2.proxy.CreateDirectory;
 import sd1920.trab2.proxy.Delete;
+import sd1920.trab2.proxy.Download;
+import sd1920.trab2.proxy.ListDirectory;
 import sd1920.trab2.proxy.Upload;
 import sd1920.trab2.util.Address;
 
 import java.net.URI;
-import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,14 +37,11 @@ public class MessageResourceProxy implements MessageService {
     //Client for local communications with the UserResource
     UsersEmailClient localUserClient;
 
-    //Per user
-    final Map<String, Map<Long, Message>> inBoxes; //inbox of each user
-    final Map<String, Map<Long, Message>> outBoxes; //outbox (sent messages) of each user
-
     //Per domain
     final Map<String, Dispatcher> dispatchers; //Map of all dispatchers -> each dispatcher contains a queue and a thread
     String internalSecret;
-
+    private Gson json;
+    
     public MessageResourceProxy(String domain, URI selfURI, int midPrefix, String internalSecret) {
         System.out.println("Constructed MessageResource in domain " + domain);
         System.out.println("Prefix: " + midPrefix);
@@ -53,9 +52,9 @@ public class MessageResourceProxy implements MessageService {
         this.internalSecret = internalSecret;
         localUserClient = ClientFactory.getUsersClient(selfURI, 5, 1000);
 
-        inBoxes = new HashMap<>();
-        outBoxes = new HashMap<>();
         dispatchers = new ConcurrentHashMap<>();
+        
+        json = new Gson();
     }
 
     public long nextMessageId() {
@@ -72,16 +71,14 @@ public class MessageResourceProxy implements MessageService {
         EmailResponse<User> validate = localUserClient.getUser(user, pwd);
         if (validate.getStatusCode() != Response.Status.OK.getStatusCode())
             throw new WebApplicationException(validate.getStatusCode());
-        Message result;
-        //synchronized since we are handling data structures
-        synchronized (this) {
-            Map<Long, Message> inbox = inBoxes.get(user);
-            if (inbox == null) //if the user exists, then so should the inbox.
-                throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
-            result = inbox.get(mid);
-            if (result == null) //throw 404 if the message does not exist
-                throw new WebApplicationException(Response.Status.NOT_FOUND);
-        }
+        
+        Download dl = new Download();
+        Message result = json.fromJson(dl.execute(domain + "/" + user + "/inbox/" + mid + ".txt"), Message.class);
+
+        if (result == null) //throw 404 if the message does not exist
+            throw new WebApplicationException(Response.Status.NOT_FOUND);
+        
+        
         return result; //return the message
     }
 
@@ -92,13 +89,10 @@ public class MessageResourceProxy implements MessageService {
         EmailResponse<User> validate = localUserClient.getUser(user, pwd);
         if (validate.getStatusCode() != Response.Status.OK.getStatusCode())
             throw new WebApplicationException(validate.getStatusCode());
-        List<Long> results;
-        synchronized (this) {
-            Map<Long, Message> inbox = inBoxes.get(user);
-            if (inbox == null)
-                throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
-            results = new LinkedList<>(inbox.keySet()); //adds all the keys of the map to a list
-        }
+        
+        ListDirectory ld = new ListDirectory();
+        List<Long> results = ld.execute(domain+"/"+user+"/inbox");
+
         return results;
     }
 
@@ -109,12 +103,15 @@ public class MessageResourceProxy implements MessageService {
         EmailResponse<User> validate = localUserClient.getUser(user, pwd);
         if (validate.getStatusCode() != Response.Status.OK.getStatusCode())
             throw new WebApplicationException(validate.getStatusCode());
-        synchronized (this) {
-            Map<Long, Message> inbox = inBoxes.get(user);
-            if (inbox == null)
-                throw new WebApplicationException(Response.Status.INTERNAL_SERVER_ERROR);
-            if (inbox.remove(mid) == null)
-                throw new WebApplicationException(Response.Status.NOT_FOUND);
+        
+        Delete dl = new Delete();
+        boolean success = dl.execute(domain+"/"+user+"/inbox/"+mid+".txt");
+        if(success)
+        	System.out.println("Message " + mid + " deleted from " + user + " inbox.");
+        else
+        {
+        	System.out.println("Message " + mid + " NOT DELETED from " + user + " inbox.");
+        	throw new WebApplicationException(Response.Status.NOT_FOUND);
         }
     }
 
@@ -125,15 +122,12 @@ public class MessageResourceProxy implements MessageService {
         if (secret == null || !secret.equals(internalSecret))
             throw new WebApplicationException(Response.Status.FORBIDDEN);
 
-        //Synchronized since we are handling data structures (inboxes)
-        //Adds to the user inbox, or throws a 404 if the inbox (and consequently the user) does not exist
-        synchronized (this) {
-            Map<Long, Message> inbox = inBoxes.get(user);
-            if (inbox == null)
-                throw new WebApplicationException(Response.Status.NOT_FOUND);
-            inbox.put(message.getId(), message);
-            System.out.println("Added " + message.getId() + " to inbox of " + user);
-        }
+        Upload ul = new Upload();
+        boolean success = ul.execute(domain + "/"+ user+ "/inbox/"+message.getId()+".txt", "add", false, true, false, message);
+        if(success)
+        	System.out.println("Added " + message.getId() + " to inbox of " + user);
+        else
+        	System.out.println(" Message NOT added to "+ user + "inbox.");
     }
 
     //Method called by other servers to forward message deletion
@@ -143,12 +137,14 @@ public class MessageResourceProxy implements MessageService {
             throw new WebApplicationException(Response.Status.FORBIDDEN);
 
         //Similar logic as "forwardSendMessage"
-        synchronized (this) {
-            Map<Long, Message> inbox = inBoxes.get(user);
-            if (inbox == null || inbox.remove(mid) == null) {
-                System.out.println("Not found in forwardDeleteSentMessage, probably deleted by user");
-                throw new WebApplicationException(Response.Status.NOT_FOUND);
-            }
+        Delete dl = new Delete();
+        boolean success = dl.execute(domain+"/"+user+"/inbox/"+mid+".txt");
+        if(success)
+        	System.out.println("Message " + mid + " deleted from " + user + " inbox.");
+        else
+        {
+        	System.out.println("Message " + mid + " NOT DELETED from " + user + " inbox.");
+        	throw new WebApplicationException(Response.Status.NOT_FOUND);
         }
     }
 
@@ -191,11 +187,13 @@ public class MessageResourceProxy implements MessageService {
         //Sets the id to a new unique id
         msg.setId(nextMessageId());
 
-        //Adds to the outbox (useful for the deleteMessage operation)
-        //synchronized since we are handling a data structure)
-        synchronized (this) {
-            outBoxes.get(u.getName()).put(msg.getId(), msg);
-        }
+        //Add to outbox
+        Upload ul = new Upload();
+        boolean success = ul.execute(domain + "/"+ u.getName()+ "/outbox/"+msg.getId()+".txt", "add", false, true, false, msg);
+        if(success)
+        	System.out.println("Message added to "+ u.getName() + " outbox.");
+        else
+        	System.out.println(" Message NOT added to "+ u.getName() + " outbox.");
 
         //For each destination...
         for (String d : msg.getDestination()) {
@@ -232,16 +230,24 @@ public class MessageResourceProxy implements MessageService {
         EmailResponse<User> validate = localUserClient.getUser(user, pwd);
         if (validate.getStatusCode() != Response.Status.OK.getStatusCode())
             throw new WebApplicationException(validate.getStatusCode());
-        Message msg;
+
         //Checks if the message is in the user outbox, which means it was sent by that user
         //and has not yet been deleted
-        synchronized (this) {
-            msg = outBoxes.get(user).remove(mid);
-            if (msg == null) {
-                System.out.println("Not found");
-                return;
-            }
+        
+        Download dl = new Download();
+        Message msg = json.fromJson(dl.execute(domain + "/" + user + "/outbox/" + mid + ".txt"), Message.class);
+        if(msg == null)
+        {
+        	System.out.println("Message not found.");
+        	return;
         }
+        
+        Delete del = new Delete();
+        boolean success = del.execute(domain+"/"+user+"/outbox/"+mid+".txt");
+        if(success)
+        	System.out.println("Message " + mid + " deleted from " + user + " outbox.");
+        else
+        	System.out.println("Couldn't delete message " + mid + " from " + user);
 
         //For each destination in the original message, either deletes from the inbox if it is a local user
         //or creates a deleteJob in the corresponding dispatcher

@@ -19,8 +19,8 @@ import java.util.function.Supplier;
  * and the logic to retry the request until it is successful
  */
 public abstract class EmailClientRestProxy {
-    public final static int CONNECTION_TIMEOUT = 4000;
-    public final static int REPLY_TIMEOUT = 2400;
+    public final static int CONNECTION_TIMEOUT = 7000;
+    public final static int REPLY_TIMEOUT = 5000;
 
     WebTarget target;
     int maxRetries;

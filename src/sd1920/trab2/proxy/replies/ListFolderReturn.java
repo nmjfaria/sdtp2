@@ -15,7 +15,7 @@ public class ListFolderReturn {
 		
 		@Override
 		public String toString() {
-			return super.get("path_display").toString();
+			return super.get("name").toString();
 		}
 	}
 	

@@ -39,7 +39,7 @@ public class Download {
 		json = new Gson();
 	}
 	
-	public User execute( String path) {
+	public String execute( String path) {
 		OAuthRequest operation = new OAuthRequest(Verb.POST, OP_URL);
 		operation.addHeader("Dropbox-API-Arg", json.toJson(new DownloadArgs("/"+path)));
 		operation.addHeader("Content-Type", OCTET_CONTENT_TYPE);
@@ -51,13 +51,12 @@ public class Download {
 			r = service.execute(operation);
 		} catch (Exception e) {
 			e.printStackTrace();
-			return null;
+			return r.getCode() + "";
 		}
 		
 		try {
 			if(r.getCode() == 200) {
-				User reply = json.fromJson(r.getBody(), User.class);
-				return reply;
+				return r.getBody();
 			} else {
 				System.err.println("HTTP Error Code: " + r.getCode() + ": " + r.getMessage());
 				try {

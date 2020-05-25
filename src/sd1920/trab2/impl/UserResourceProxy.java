@@ -4,6 +4,8 @@ import javax.inject.Singleton;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
 
+import com.google.gson.Gson;
+
 import sd1920.trab2.api.User;
 import sd1920.trab2.api.rest.UserService;
 import sd1920.trab2.clients.ClientFactory;
@@ -25,7 +27,7 @@ public class UserResourceProxy implements UserService {
     //is simpler than using a synchronized block
     String domain;
     String internalSecret;
-    
+    private Gson json;
     MessagesEmailClient localMessageClient;
 
     public UserResourceProxy(String domain, URI selfURI, String internalSecret) {
@@ -33,6 +35,8 @@ public class UserResourceProxy implements UserService {
         this.domain = domain;
         this.internalSecret = internalSecret;
         localMessageClient = ClientFactory.getMessagesClientProxy(selfURI, 2, 1000);
+        
+        json = new Gson();
     }
 
     @Override
@@ -82,9 +86,7 @@ public class UserResourceProxy implements UserService {
             throw new WebApplicationException("Invalid or empty user or password", Response.Status.FORBIDDEN);
         
         Download dl = new Download();
-        User user = dl.execute(domain+"/" + name + "/" + name +".txt");
-        
-        
+        User user = json.fromJson(dl.execute(domain+"/" + name + "/" + name +".txt"), User.class);
         
         if (user == null)
             throw new WebApplicationException("Invalid user", Response.Status.FORBIDDEN);
