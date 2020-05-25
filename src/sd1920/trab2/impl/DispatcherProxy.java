@@ -15,17 +15,17 @@ import java.util.concurrent.*;
  * This class contains all the logic of inter-domain communications,
  * including the queue itself, and the thread responsible for executing the requests.
  */
-public class Dispatcher {
+public class DispatcherProxy {
 
     private BlockingQueue<Job> jobs;
     private String targetDomain;
-    private MessageResourceProxy resource;
+    private MessageResource resource;
 
     private Thread worker;
     private volatile boolean signalStop;
 
     // *****************  METHODS CALLED FROM OUTSIDE ***********************************
-    public Dispatcher(String targetDomain, MessageResourceProxy resource) {
+    public DispatcherProxy(String targetDomain, MessageResource resource) {
         this.targetDomain = targetDomain;
         this.resource = resource;
         this.jobs = new LinkedBlockingQueue<>();

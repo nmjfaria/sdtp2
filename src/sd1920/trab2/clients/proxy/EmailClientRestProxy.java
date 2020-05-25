@@ -1,4 +1,4 @@
-package sd1920.trab2.clients.rest;
+package sd1920.trab2.clients.proxy;
 
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientProperties;
@@ -18,15 +18,15 @@ import java.util.function.Supplier;
  * contains the code which is used in both the Message and User clients such as timeouts, WebTarget creation,
  * and the logic to retry the request until it is successful
  */
-public abstract class EmailClientRest {
-    public final static int CONNECTION_TIMEOUT = 2000;
-    public final static int REPLY_TIMEOUT = 1200;
+public abstract class EmailClientRestProxy {
+    public final static int CONNECTION_TIMEOUT = 4000;
+    public final static int REPLY_TIMEOUT = 2400;
 
     WebTarget target;
     int maxRetries;
     int retryPeriod;
 
-    public EmailClientRest(URI serverUrl, int maxRetries, int retryPeriod, String resourceUrl){
+    public EmailClientRestProxy(URI serverUrl, int maxRetries, int retryPeriod, String resourceUrl){
         ClientConfig config = new ClientConfig();
         config.property(ClientProperties.CONNECT_TIMEOUT, CONNECTION_TIMEOUT);
         config.property(ClientProperties.READ_TIMEOUT, REPLY_TIMEOUT);

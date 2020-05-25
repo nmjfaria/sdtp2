@@ -10,6 +10,9 @@ import sd1920.trab2.api.rest.MessageService;
 import sd1920.trab2.clients.ClientFactory;
 import sd1920.trab2.clients.EmailResponse;
 import sd1920.trab2.clients.UsersEmailClient;
+import sd1920.trab2.proxy.CreateDirectory;
+import sd1920.trab2.proxy.Delete;
+import sd1920.trab2.proxy.Upload;
 import sd1920.trab2.util.Address;
 
 import java.net.URI;
@@ -21,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Singleton
-public class MessageResource implements MessageService {
+public class MessageResourceProxy implements MessageService {
 
     String domain;
     //Counter for message ids (to avoid duplicates)
@@ -37,10 +40,10 @@ public class MessageResource implements MessageService {
     final Map<String, Map<Long, Message>> outBoxes; //outbox (sent messages) of each user
 
     //Per domain
-    final Map<String, DispatcherProxy> dispatchers; //Map of all dispatchers -> each dispatcher contains a queue and a thread
+    final Map<String, Dispatcher> dispatchers; //Map of all dispatchers -> each dispatcher contains a queue and a thread
     String internalSecret;
 
-    public MessageResource(String domain, URI selfURI, int midPrefix, String internalSecret) {
+    public MessageResourceProxy(String domain, URI selfURI, int midPrefix, String internalSecret) {
         System.out.println("Constructed MessageResource in domain " + domain);
         System.out.println("Prefix: " + midPrefix);
 
@@ -215,7 +218,7 @@ public class MessageResource implements MessageService {
                 //a new deliverJob to it.
                 //The method "computeIfAbsent" creates a new dispatcher, of fetches the existing one if it exists already
                 dispatchers.computeIfAbsent(destination.getDomain(), k ->
-                        new DispatcherProxy(k, this)).addDeliverJob(msg, destination.getName(), u.getName());
+                        new Dispatcher(k, this)).addDeliverJob(msg, destination.getName(), u.getName());
             }
         }
         return msg.getId();
@@ -251,7 +254,7 @@ public class MessageResource implements MessageService {
                     } catch (WebApplicationException ignored) {
                     }
                 } else {
-                    dispatchers.computeIfAbsent(addr.getDomain(), k -> new DispatcherProxy(k, this))
+                    dispatchers.computeIfAbsent(addr.getDomain(), k -> new Dispatcher(k, this))
                             .addDeleteJob(msg.getId(), addr.getName());
                 }
             }
@@ -264,14 +267,21 @@ public class MessageResource implements MessageService {
         if (secret == null || !secret.equals(internalSecret))
             throw new WebApplicationException(Response.Status.FORBIDDEN);
 
-        synchronized (this) {
-            Map<Long, Message> remove = inBoxes.remove(user);
-            Map<Long, Message> remove1 = outBoxes.remove(user);
-            if (remove == null || remove1 == null) {
-                System.err.println("deleteUserInfo was called, but inbox or outbox did not exist...");
-                throw new WebApplicationException(Response.Status.NOT_FOUND);
-            }
-        }
+        Delete pd = new Delete();
+        boolean success = pd.execute(domain+"/"+user+"/inbox");
+        if(success)
+        	System.out.println("Inbox folder DELETED of user: "+user);
+        
+        else
+        	System.out.println("Inbox folder NOT DELETED of user: "+user);
+        
+        pd = new Delete();
+        success = pd.execute(domain+"/"+user+"/outbox");
+        if(success)
+        	System.out.println("Outbox folder DELETED of user: "+user);
+        
+        else
+        	System.out.println("Outbox folder NOT DELETED of user: "+user);
     }
 
     @Override
@@ -280,14 +290,18 @@ public class MessageResource implements MessageService {
         if (secret == null || !secret.equals(internalSecret))
             throw new WebApplicationException(Response.Status.FORBIDDEN);
 
-        synchronized (this) {
-            if (inBoxes.containsKey(user) || outBoxes.containsKey(user)) {
-                System.err.println("setupUserInfo was called, but inbox or outbox already exists...");
-                throw new WebApplicationException(Response.Status.CONFLICT);
-            } else
-                inBoxes.put(user, new HashMap<>());
-            outBoxes.put(user, new HashMap<>());
-        }
+        CreateDirectory cd = new CreateDirectory();
+        boolean success = cd.execute(domain+"/"+user+"/inbox");
+        if(success)
+        	System.out.println("Inbox folder created of user: "+user);
+        else
+        	System.out.println("Inbox folder NOT created of user: "+user);
+        
+        success = cd.execute(domain+"/"+user+"/outbox");
+        if(success)
+        	System.out.println("Outbox folder created for user: "+user);
+        else
+        	System.out.println("Outbox folder NOT created for user: "+user);
     }
     
     protected String getInternalSecret()
